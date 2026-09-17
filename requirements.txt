@@ -1,0 +1,3 @@
+# ROS 2 Python packages are supplied by the sourced Humble installation.
+numpy>=1.21
+open3d>=0.17
