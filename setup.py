@@ -18,6 +18,7 @@ setup(
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
         (f"share/{package_name}/rviz", glob("rviz/*.rviz")),
         (f"share/{package_name}/meshes/humans", glob("meshes/humans/*")),
+        (f"share/{package_name}/trajectories", glob("trajectories/*.csv")),
     ],
     install_requires=["setuptools", "numpy", "PyYAML", "open3d>=0.17", "trimesh>=3.9"],
     zip_safe=True,

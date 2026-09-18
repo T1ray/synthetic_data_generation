@@ -29,7 +29,7 @@ def test_load_valid_scenario(tmp_path: Path):
 
 
 @pytest.mark.parametrize("mutate,match", [
-    (lambda d: d.update(schema_version=3), "schema_version"),
+    (lambda d: d.update(schema_version=4), "schema_version"),
     (lambda d: d.pop("seed"), "missing required"),
     (lambda d: d["frames"].update(start_index=-1), "frames.start_index"),
     (lambda d: d["frames"].update(start_index=4, end_index=3), "start_index"),

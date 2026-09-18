@@ -189,8 +189,15 @@ def _load_human_mesh(config: HumanMeshGeometry) -> tuple[np.ndarray, np.ndarray,
     return vertices, triangles.astype(np.int32), normalization, sha
 
 
-def build_geometry(obj: ScenarioObject) -> BuiltGeometry:
-    transform = pose_transform(obj.pose)
+def build_geometry(obj: ScenarioObject, transform_override: np.ndarray | None = None) -> BuiltGeometry:
+    if transform_override is None:
+        if obj.pose is None:
+            raise GeometryError(f"{obj.object_id}: a per-frame transform is required")
+        transform = pose_transform(obj.pose)
+    else:
+        transform = np.asarray(transform_override, dtype=np.float64)
+        if transform.shape != (4, 4) or not np.isfinite(transform).all():
+            raise GeometryError(f"{obj.object_id}: transform must be a finite 4x4 matrix")
     geometry = obj.geometry
     marker_transform = transform.copy()
     marker_scale = (1.0, 1.0, 1.0)
@@ -240,3 +247,17 @@ def build_geometry(obj: ScenarioObject) -> BuiltGeometry:
 
 def build_geometries(objects: tuple[ScenarioObject, ...]) -> tuple[BuiltGeometry, ...]:
     return tuple(build_geometry(obj) for obj in objects)
+
+
+def transform_built_geometry(template: BuiltGeometry, transform: np.ndarray) -> BuiltGeometry:
+    """Apply a per-frame pose to geometry prepared once in its local frame."""
+    transform = np.asarray(transform, dtype=np.float64)
+    vertices = transform_points(template.vertices_lidar, transform)
+    control = (transform_points(template.control_points_lidar, transform)
+               if template.control_points_lidar is not None else None)
+    marker_transform = transform @ template.marker_transform
+    minimum, maximum = vertices.min(axis=0), vertices.max(axis=0)
+    return BuiltGeometry(template.object_id, template.class_name, template.geometry_type,
+        vertices, template.triangles, transform, marker_transform, template.marker_scale,
+        tuple(float(v) for v in minimum), tuple(float(v) for v in maximum),
+        template.color_rgba, control, template.mesh_resource_uri, template.mesh_path, template.mesh_sha256)

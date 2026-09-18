@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+import time
 from typing import Any, Iterable, Optional
 
 import numpy as np
@@ -17,6 +18,7 @@ from synthetic_data_generation.ground_truth import AnnotationWriter, annotation_
 from synthetic_data_generation.object_injector import FrameInjectionResult, inject_objects
 from synthetic_data_generation.scenario import Scenario
 from synthetic_data_generation.visualization import build_marker_array
+from synthetic_data_generation.temporal import TemporalScene, matrix_quaternion
 
 
 @dataclass
@@ -40,8 +42,12 @@ class ProcessingContext:
     annotations_path: Optional[Path] = None
     geometries: tuple[BuiltGeometry, ...] = field(default_factory=tuple)
     object_modified_counts: Counter[str] = field(default_factory=Counter)
+    scene_build_seconds: float = 0.0
+    injection_seconds: float = 0.0
+    marker_seconds: float = 0.0
     _annotations: Optional[AnnotationWriter] = field(default=None, init=False, repr=False)
     _extra_messages: list[tuple[str, Any, int]] = field(default_factory=list, init=False, repr=False)
+    _temporal_scene: Optional[TemporalScene] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.target_frame_index is not None:
@@ -84,7 +90,11 @@ class ProcessingContext:
             print(f"Scenario ID: {self.scenario.scenario_id}")
             print(f"Objects: {len(self.scenario.objects)}")
             for obj in self.scenario.objects:
-                print(f"  {obj.object_id}: class={obj.class_name}, geometry={obj.geometry_type}, xyz={obj.xyz_m}, rpy={obj.rpy_deg}")
+                if obj.pose is not None:
+                    pose_text=f"xyz={obj.xyz_m}, rpy={obj.rpy_deg}"
+                else:
+                    pose_text=f"placement={obj.placement.type}, active=[{obj.temporal.start_index}, {obj.temporal.end_index}]"
+                print(f"  {obj.object_id}: class={obj.class_name}, geometry={obj.geometry_type}, {pose_text}")
         print(f"PointCloud2 topic: {self.pointcloud_topic}")
         print(f"Requested inclusive frame range: [{self.start_index}, {self.end_index}]")
         if self.visualization_enabled:
@@ -102,6 +112,8 @@ class ProcessingContext:
         annotations = AnnotationWriter(self.annotations_path)
         if self.scenario.schema_version == 2:
             self.geometries = build_geometries(self.scenario.objects)
+        elif self.scenario.schema_version == 3:
+            self._temporal_scene = TemporalScene(self.scenario)
         self._annotations = annotations
         self._annotations.open()
         if self.scenario.schema_version == 2:
@@ -177,6 +189,58 @@ class ProcessingContext:
             "objects": objects,
         })
 
+    @staticmethod
+    def _pose_record(transform: Optional[np.ndarray]) -> Optional[dict[str, Any]]:
+        if transform is None:
+            return None
+        return {"xyz_m": [float(v) for v in transform[:3,3]],
+                "quaternion_xyzw": list(matrix_quaternion(transform[:3,:3]))}
+
+    def _v3_annotation(self, message: PointCloud2, topic_name: str, timestamp: int,
+                       frame_index: int, reference_timestamp: int, states: tuple[Any,...],
+                       result: FrameInjectionResult) -> None:
+        stats={item.object_id:item for item in result.object_stats}; built={item.object_id:item for item in self.geometries}
+        objects=[]
+        for state in states:
+            obj=state.config; item_stats=stats.get(obj.object_id)
+            record={"object_id":obj.object_id,"class_name":obj.class_name,"geometry_type":obj.geometry_type,
+                    "active":state.active,"placement_type":obj.placement.type,
+                    "pose_track":state.track_state,"pose_reference":self._pose_record(state.transform_reference),
+                    "pose_lidar":self._pose_record(state.transform_lidar),
+                    "ideal_visible_hit_count":item_stats.ideal_visible_hit_count if item_stats else 0,
+                    "returned_after_dropout_count":item_stats.returned_after_dropout_count if item_stats else 0,
+                    "dropout_count":item_stats.dropout_count if item_stats else 0,
+                    "synthetic_returns_from_zero_slots":item_stats.synthetic_returns_from_zero_slots if item_stats else 0,
+                    "ray_intersection_count":item_stats.ray_intersection_count if item_stats else 0,
+                    "visible_point_count":item_stats.visible_point_count if item_stats else 0,
+                    "modified_slot_count":item_stats.modified_slot_count if item_stats else 0}
+            if state.active:
+                geometry=built[obj.object_id]
+                record["bounds_lidar"]={"min_xyz_m":list(geometry.bounds_min),"max_xyz_m":list(geometry.bounds_max)}
+                if geometry.mesh_path: record.update(mesh_path=geometry.mesh_path,mesh_sha256=geometry.mesh_sha256)
+            objects.append(record)
+        zero=result.zero_slot_stats; effects=result.sensor_effect_stats
+        self._annotations.write({"schema_version":3,"sensor_model_version":1,
+            "scenario_id":self.scenario.scenario_id,"seed":self.scenario.seed,"topic":topic_name,
+            "frame_index":frame_index,"bag_timestamp_ns":int(timestamp),"header_stamp_ns":self._header_stamp_ns(message),
+            "reference_timestamp_ns":int(reference_timestamp),"input_point_count":result.total_points,
+            "valid_ray_count":result.valid_ray_count,"modified_slot_count":result.modified_slot_count,
+            "zero_slot_count":zero.zero_slot_count,"recoverable_zero_slot_count":zero.recoverable_zero_slot_count,
+            "recovered_direction_count":zero.recovered_direction_count,
+            "synthetic_returns_from_zero_slots":sum(item.synthetic_returns_from_zero_slots for item in result.object_stats),
+            "zero_slot_rejection_reasons":zero.rejection_reasons,
+            "direction_quality":{"median_angular_error_deg":zero.median_angular_error_deg,
+                "p95_angular_error_deg":zero.p95_angular_error_deg,"max_angular_error_deg":zero.max_angular_error_deg},
+            "sensor_effects":{"range_noise_enabled":self.scenario.sensor_effects.range_noise.enabled,
+                "dropout_enabled":self.scenario.sensor_effects.dropout.enabled,
+                "intensity_enabled":self.scenario.sensor_effects.intensity.enabled},
+            "range_noise_applied_count":effects.range_noise_applied_count,
+            "range_noise_resample_count":effects.range_noise_resample_count,
+            "range_noise_clamp_count":effects.range_noise_clamp_count,"dropout_count":effects.dropout_count,
+            "intensity_generated_count":effects.intensity_generated_count,
+            "intensity_fallback_counts":effects.intensity_fallback_counts,
+            "normal_fallback_count":effects.normal_fallback_count,"objects":objects})
+
     def process_message(self, topic_name: str, message: Any, timestamp: int) -> Any:
         if topic_name != self.pointcloud_topic:
             return message
@@ -196,14 +260,35 @@ class ProcessingContext:
                 self._legacy_annotation(message, topic_name, timestamp, current_index, stats)
                 self.object_modified_counts[self.scenario.object.object_id] += modified
         else:
-            result = inject_objects(message, self.geometries)
+            reference_timestamp=self._header_stamp_ns(message) or int(timestamp)
+            states=None
+            if self.scenario.schema_version == 3:
+                stage_started=time.perf_counter()
+                states=self._temporal_scene.states_at(current_index,reference_timestamp)
+                self.geometries=tuple(state.built for state in states if state.active)
+                materials={state.config.object_id:state.config.material for state in states if state.active}
+                self.scene_build_seconds+=time.perf_counter()-stage_started
+                stage_started=time.perf_counter()
+                result=inject_objects(message,self.geometries,scenario_seed=self.scenario.seed,
+                    frame_index=current_index,zero_slot_config=self.scenario.zero_slot_recovery,
+                    sensor_effects=self.scenario.sensor_effects,materials=materials)
+                self.injection_seconds+=time.perf_counter()-stage_started
+            else:
+                stage_started=time.perf_counter()
+                result = inject_objects(message, self.geometries)
+                self.injection_seconds+=time.perf_counter()-stage_started
             self.last_frame_result = result
             valid_rays, hits, modified = result.valid_ray_count, result.ray_intersection_count, result.modified_slot_count
-            self._v2_annotation(message, topic_name, timestamp, current_index, result)
+            if self.scenario.schema_version == 3:
+                self._v3_annotation(message,topic_name,timestamp,current_index,reference_timestamp,states,result)
+            else:
+                self._v2_annotation(message, topic_name, timestamp, current_index, result)
             for item in result.object_stats:
                 self.object_modified_counts[item.object_id] += item.modified_slot_count
             if self.visualization_enabled:
+                marker_started=time.perf_counter()
                 marker_array = build_marker_array(message, self.geometries, result, self.scenario.visualization)
+                self.marker_seconds+=time.perf_counter()-marker_started
                 self._extra_messages.append((self.scenario.visualization.marker_topic, marker_array, int(timestamp)))
                 self.marker_array_count += 1
 
@@ -243,6 +328,9 @@ class ProcessingContext:
         for object_id, count in self.object_modified_counts.items():
             print(f"  object {object_id}: modified slots={count}")
         print(f"  zero-visible frames: {self.zero_visible_frames}")
+        print(f"  pose/geometry update time: {self.scene_build_seconds:.6f} s")
+        print(f"  ray/recovery/sensor time: {self.injection_seconds:.6f} s")
+        print(f"  MarkerArray build time: {self.marker_seconds:.6f} s")
         print(f"  output bag: {output_bag}")
         if self.annotations_path is not None:
             print(f"  annotations JSONL: {self.annotations_path}")

@@ -15,8 +15,29 @@
 - взаимная окклюзия: каждому лучу назначается только ближайший синтетический объект;
 - JSONL со статистикой каждого объекта и каждого обработанного кадра;
 - `/synthetic/markers` с геометрией, реально заменёнными точками, текстом и AABB;
-- schema v1 для совместимости и schema v2 для нескольких объектов;
-- детерминированный seed; случайные эффекты пока не включены.
+- schema v1 для совместимости, v2 для нескольких объектов и v3 для сенсорной
+  модели, zero slots и temporal placement;
+- детерминированные независимые RNG-потоки для noise, dropout и intensity.
+
+## Подробная документация
+
+- [Индекс документации](docs/README.md) — рекомендуемый порядок чтения.
+- [Архитектура системы](docs/ARCHITECTURE.md) — слои, поток данных,
+  координатные соглашения и архитектурные инварианты.
+- [Карта исходного кода](docs/CODE_GUIDE.md) — основные файлы, функции, классы,
+  структуры и их взаимодействие.
+- [Установка и окружение](docs/INSTALLATION.md) — ROS 2, WSL, virtualenv,
+  colcon, зависимости и проверка установки.
+- [Настройка Scenario YAML](docs/CONFIGURATION.md) — schema v1–v3, геометрии,
+  визуализация, сенсорная модель, trajectory и track.
+- [Работа с ROS 2 bags](docs/BAG_WORKFLOW.md) — identity roundtrip, изменение
+  исходных записей, выходные артефакты и проверка результата.
+- [Настройка RViz2](docs/RVIZ_GUIDE.md) — Fixed Frame, PointCloud2,
+  MarkerArray, цвета, namespace и lifetime.
+- [Тестирование](docs/TESTING.md) — unit/integration/regression тесты,
+  воспроизводимость и проверка реального bag.
+- [Диагностика](docs/TROUBLESHOOTING.md) — типичные ошибки конфигурации,
+  зависимостей, trajectory, zero slots и RViz.
 
 ## Окружение и установка
 
@@ -200,6 +221,160 @@ finite(t_hit) and epsilon < t_hit < original_range - epsilon
 объекта. Цвет берётся из `objects[].visualization.color_rgba`, а не из
 нестабильного Python `hash()`.
 
+## Schema v3: сенсорная модель и временная согласованность
+
+Полный пример находится в `config/scenarios/track_sensor_model.yaml`, а
+синтетическая trajectory — в `trajectories/synthetic_run.csv`. Порядок обработки
+одного кадра фиксирован:
+
+```text
+decode → valid/zero classification → direction recovery → rays
+→ pose текущего кадра → ray casting → background occlusion
+→ range noise → dropout → intensity → encode → MarkerArray → JSONL
+```
+
+Чтобы полностью отключить шаги 8–10, используйте schema v2 либо schema v3 с
+`zero_slot_recovery.enabled: false`, всеми тремя sensor effects `enabled: false`
+и только `placement.type: lidar_relative` со `motion.type: static`.
+
+### Range noise
+
+Шум применяется только к идеальным синтетическим hit после окклюзии:
+
+```text
+sigma = base_sigma_m
+      + sigma_per_meter * r_hit
+      + incidence_sigma_scale * (1 - incidence_cosine)
+r_noisy = r_hit + Normal(0, sigma²)
+```
+
+`incidence_cosine = abs(dot(-ray_direction, normalized_primitive_normal))`.
+Некорректная нормаль получает документированный fallback `1.0` и учитывается
+счётчиком. Выборка повторяется до `max_resample_attempts`; после этого дальность
+clamp-ится между `min_range_m` и известным реальным фоном. Для восстановленного
+нулевого слота фон равен бесконечности.
+
+### Dropout и no-return
+
+Вероятность возврата:
+
+```text
+distance_factor = min(1, (distance_reference_m / range) ^ distance_exponent)
+incidence_factor = incidence_cosine ^ incidence_exponent
+p_return = clamp(base_probability * distance_factor * incidence_factor
+                 * material.return_probability_scale,
+                 min_return_probability, 1)
+```
+
+Dropout не возвращает закрытый реальный фон. Стратегия `zero_xyz` записывает
+`x=y=z=0` и `intensity=0`, сохраняя ring, timestamp, остальные поля, layout и
+число слотов.
+
+### Empirical intensity
+
+Intensity генерируется только для synthetic returns, переживших dropout.
+Донор выбирается воспроизводимо из текущего реального кадра по range bin с
+fallback к ближайшему bin, затем:
+
+```text
+I = I_sample * material.reflectivity
+  * incidence_cosine ^ incidence_exponent
+  + Normal(0, additive_sigma²)
+```
+
+Значение ограничивается диапазоном фактического datatype `PointField`. Поле не
+добавляется автоматически. `on_missing` задаёт `error` или
+`skip_with_warning`; `fallback` — `preserve_original` или `constant`.
+
+### Независимые RNG-потоки
+
+Глобальный `np.random` и Python `hash()` не используются. Ключ объекта — первые
+32 бита SHA-256 от UTF-8 `object_id`. Каждый поток строится как:
+
+```text
+SeedSequence([scenario_seed, frame_index, stable_object_key, effect_code])
+```
+
+Noise, dropout и intensity имеют разные постоянные `effect_code`. Поэтому
+включение intensity не меняет dropout mask, а изменение одного объекта не
+сдвигает случайные числа другого.
+
+## Восстановление нулевых слотов
+
+Слоты классифицируются отдельно:
+
+- valid return — конечный XYZ с range больше epsilon;
+- zero slot — конечный XYZ с range не больше epsilon;
+- invalid nonzero — NaN/Inf, который не восстанавливается.
+
+Для каждого ring по валидным точкам берётся median elevation. Azimuth
+`atan2(y,x)` сортируется по timestamp, проходит `unwrap`, после чего линейно
+интерполируется на timestamp zero slot. Направление используется только при
+достаточном числе образцов, допустимом timestamp и p95 angular error не выше
+`max_angular_error_deg`.
+
+`timestamp_unit` задаётся явно: `seconds`, `milliseconds`, `microseconds`,
+`nanoseconds` или `relative_ticks`. `auto` отклоняется как неоднозначный. Для
+интерполяции важен относительный порядок; trajectory всегда использует
+абсолютные `timestamp_ns`.
+
+Если облако не сохраняет no-return слоты вообще, отсутствующие лучи не
+выдумываются. Ring и timestamp восстановленного слота не изменяются. JSONL
+содержит zero/recovered counts, причины отказов и median/p95/max angular error.
+
+## Ego motion, track и placement
+
+Матрица `T_A_B` преобразует координаты из B в A:
+
+```text
+p_A = T_A_B @ p_B
+T_lidar_object = inverse(T_reference_lidar) @ T_reference_object
+```
+
+Надёжный источник pose текущей версии — `trajectory_csv`:
+
+```text
+timestamp_ns,x_m,y_m,z_m,qx,qy,qz,qw
+```
+
+Translation интерполируется линейно, rotation — quaternion SLERP. Quaternion
+нормализуется; экстраполяция и интервалы больше `max_interpolation_gap_ms`
+запрещены. TF-provider пока не реализован и identity transform для production
+track-relative режима не подставляется.
+
+Track задаётся полилинией в reference frame. `longitudinal_m` — arc length, а
+не X и не индекс вершины. Базис:
+
+```text
+T = normalized tangent
+L = normalize(up_hint × T)       # влево
+U = normalize(T × L)             # вверх
+```
+
+Положение центра основания:
+
+```text
+P_reference = C(s) + lateral_m * L(s) + height_m * U(s)
+R_reference_object = [T L U] @ Rz(yaw) @ Ry(pitch) @ Rx(roll)
+```
+
+`static` сохраняет pose объекта в reference frame. Для
+`constant_track_velocity` состояние вычисляется от timestamp первого активного
+кадра:
+
+```text
+s=s0+v_longitudinal*dt; l=l0+v_lateral*dt; h=h0+v_vertical*dt
+yaw=yaw0+yaw_rate*dt
+```
+
+`active_frames` имеет включительные границы. Неактивный объект не попадает в
+сцену, помечается `active: false` в JSONL, а его RViz marker исчезает по lifetime.
+
+Весь PointCloud2 обрабатывается на одном reference timestamp: сначала
+`header.stamp`, при нуле — bag timestamp. Timestamp отдельных точек используется
+для восстановления направления, но внутрискановое движение и deskew не
+моделируются.
+
 ## Просмотр в RViz2
 
 ```bash
@@ -227,8 +402,9 @@ python -m pytest -q
 ## Ограничения
 
 - только система координат LiDAR, без track/map transform;
-- pose объектов фиксирован на всём диапазоне;
-- нет noise, dropout и моделирования intensity;
+- lidar-relative pose фиксирован; track-relative pose следует заданной временной модели;
+- moving pose поддерживается только простой track-velocity моделью;
+- TF-provider и intra-scan motion compensation пока не реализованы;
 - не создаются новые угловые слоты LiDAR — заменяются существующие возвраты;
 - human mesh должен быть доступен локально и иметь треугольные грани;
 - лицензии внешних production mesh проверяются отдельно;
