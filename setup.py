@@ -1,3 +1,4 @@
+from glob import glob
 from setuptools import find_packages, setup
 
 
@@ -13,8 +14,12 @@ setup(
             [f"resource/{package_name}"],
         ),
         (f"share/{package_name}", ["package.xml", "README.md"]),
+        (f"share/{package_name}/config/scenarios", glob("config/scenarios/*.yaml")),
+        (f"share/{package_name}/launch", glob("launch/*.launch.py")),
+        (f"share/{package_name}/rviz", glob("rviz/*.rviz")),
+        (f"share/{package_name}/meshes/humans", glob("meshes/humans/*")),
     ],
-    install_requires=["setuptools", "numpy"],
+    install_requires=["setuptools", "numpy", "PyYAML", "open3d>=0.17", "trimesh>=3.9"],
     zip_safe=True,
     maintainer="HackathonLoDT team",
     maintainer_email="team@example.com",

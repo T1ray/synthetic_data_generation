@@ -31,6 +31,8 @@ class RoundtripResult:
     output_path: Path
     storage_id: str
     message_count: int
+    input_message_count: int
+    output_message_count: int
     topic_counts: Mapping[str, int]
     elapsed_seconds: float
 
@@ -209,18 +211,38 @@ def roundtrip_bag(
         validate_topics = getattr(context, "validate_topics", None)
         if validate_topics is not None:
             validate_topics(topics)
+        prepare_outputs = getattr(context, "prepare_outputs", None)
+        if prepare_outputs is not None:
+            prepare_outputs(output_path)
+
+    additional_topics: list[Any] = []
+    if context is not None:
+        additional = getattr(context, "additional_topic_metadata", None)
+        if additional is not None:
+            serialization_format = next(
+                (topic.serialization_format for topic in topics if topic.serialization_format),
+                "cdr",
+            )
+            additional_topics = list(additional(serialization_format))
+    existing_names = {topic.name for topic in topics}
+    duplicate_additions = [topic.name for topic in additional_topics if topic.name in existing_names]
+    if duplicate_additions:
+        raise RoundtripError(f"Additional output topics conflict with input topics: {duplicate_additions}")
 
     print("Topics:")
     for topic in topics:
         print(f"  {topic.name}: {topic.type} [{topic.serialization_format}]")
+    for topic in additional_topics:
+        print(f"  {topic.name}: {topic.type} [{topic.serialization_format}] (generated)")
 
     writer = None
     counts: Counter[str] = Counter()
-    total = 0
+    input_total = 0
+    output_total = 0
     started = time.perf_counter()
 
     try:
-        writer = open_writer(output_path, storage_id, topics)
+        writer = open_writer(output_path, storage_id, [*topics, *additional_topics])
         while reader.has_next():
             topic_name, serialized_data, timestamp = reader.read_next()
             message_type = message_types.get(topic_name)
@@ -246,15 +268,34 @@ def roundtrip_bag(
 
             writer.write(topic_name, output_data, timestamp)
             counts[topic_name] += 1
-            total += 1
+            input_total += 1
+            output_total += 1
 
-            if progress_every > 0 and total % progress_every == 0:
-                print(f"Processed {total} messages...")
+            if context is not None:
+                pop_extra = getattr(context, "pop_extra_messages", None)
+                if pop_extra is not None:
+                    for extra_topic, extra_message, extra_timestamp in pop_extra():
+                        try:
+                            extra_data = serialize_message(extra_message)
+                        except Exception as exc:
+                            raise RoundtripError(
+                                f"Failed to serialize generated message on {extra_topic!r}: {exc}"
+                            ) from exc
+                        writer.write(extra_topic, extra_data, extra_timestamp)
+                        counts[extra_topic] += 1
+                        output_total += 1
+
+            if progress_every > 0 and input_total % progress_every == 0:
+                print(f"Processed {input_total} input messages...")
         if context is not None:
             finalize = getattr(context, "finalize", None)
             if finalize is not None:
                 finalize()
     except Exception:
+        if context is not None:
+            abort = getattr(context, "abort", None)
+            if abort is not None:
+                abort()
         if writer is not None:
             print(
                 f"warning: output bag may be incomplete: {output_path}",
@@ -269,17 +310,24 @@ def roundtrip_bag(
 
     elapsed = time.perf_counter() - started
     print("Message counts:")
-    for topic in topics:
+    for topic in [*topics, *additional_topics]:
         print(f"  {topic.name}: {counts[topic.name]}")
-    print(f"Total: {total}")
+    print(f"Input total: {input_total}")
+    print(f"Output total: {output_total}")
     print(f"Elapsed: {elapsed:.3f} s")
+    if context is not None:
+        print_summary = getattr(context, "print_summary", None)
+        if print_summary is not None:
+            print_summary(input_total, output_total, output_path)
     print("Roundtrip completed successfully.")
 
     return RoundtripResult(
         input_path=input_path,
         output_path=output_path,
         storage_id=storage_id,
-        message_count=total,
+        message_count=output_total,
+        input_message_count=input_total,
+        output_message_count=output_total,
         topic_counts=dict(counts),
         elapsed_seconds=elapsed,
     )
@@ -294,6 +342,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--input", required=True, type=Path, help="Input bag URI")
     parser.add_argument("--output", required=True, type=Path, help="Output bag URI")
+    parser.add_argument(
+        "--scenario",
+        type=Path,
+        help="Schema-v1/v2 YAML scenario (cannot be combined with legacy cube options)",
+    )
     parser.add_argument(
         "--progress-every",
         type=int,
@@ -343,6 +396,17 @@ def build_processing_context(args: argparse.Namespace) -> Optional[Any]:
     selector_supplied = (
         args.pointcloud_topic is not None or args.target_frame_index is not None
     )
+
+    if args.scenario is not None:
+        if args.inject_cube or cube_options_supplied or selector_supplied:
+            raise RoundtripError(
+                "--scenario cannot be combined with legacy --inject-cube, "
+                "--pointcloud-topic, --target-frame-index, or --cube-* options."
+            )
+        from synthetic_data_generation.processor import ProcessingContext
+        from synthetic_data_generation.scenario import load_scenario
+
+        return ProcessingContext.from_scenario(load_scenario(args.scenario))
 
     if not args.inject_cube:
         if cube_options_supplied or selector_supplied:

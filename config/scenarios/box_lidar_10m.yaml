@@ -1,0 +1,22 @@
+schema_version: 1
+scenario_id: box_lidar_10m
+seed: 42
+source:
+  pointcloud_topic: /lidar_points
+frames:
+  start_index: 10
+  end_index: 20
+objects:
+  - id: obstacle_box_1
+    class_name: obstacle
+    geometry:
+      type: box
+      dimensions_m: [2.0, 2.0, 2.0]
+    pose:
+      coordinate_system: lidar
+      xyz_m: [10.0, 0.0, 0.0]
+      rpy_deg: [0.0, 0.0, 0.0]
+sensor_effects:
+  range_noise: false
+  dropout: false
+  modify_intensity: false

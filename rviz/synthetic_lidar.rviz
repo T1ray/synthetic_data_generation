@@ -1,0 +1,31 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: synthetic_lidar
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Synthetic PointCloud2
+      Enabled: true
+      Topic:
+        Value: /lidar_points
+      Size (m): 0.03
+      Style: Points
+      Color Transformer: FlatColor
+      Color: 220; 220; 220
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Synthetic Objects
+      Enabled: true
+      Topic:
+        Value: /synthetic/markers
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+Window Geometry:
+  Width: 1280
+  Height: 800

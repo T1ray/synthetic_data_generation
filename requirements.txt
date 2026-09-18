@@ -1,3 +1,5 @@
 # ROS 2 Python packages are supplied by the sourced Humble installation.
 numpy>=1.21
+PyYAML>=5.4
 open3d>=0.17
+trimesh>=3.9
