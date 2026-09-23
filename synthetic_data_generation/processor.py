@@ -17,7 +17,7 @@ from synthetic_data_generation.geometry import BuiltGeometry, build_geometries
 from synthetic_data_generation.ground_truth import AnnotationWriter, annotation_path_for
 from synthetic_data_generation.object_injector import FrameInjectionResult, inject_objects
 from synthetic_data_generation.scenario import Scenario
-from synthetic_data_generation.visualization import build_marker_array
+from synthetic_data_generation.visualization import build_clear_marker_array, build_marker_array
 from synthetic_data_generation.temporal import TemporalScene, matrix_quaternion
 
 
@@ -248,6 +248,11 @@ class ProcessingContext:
             raise RoundtripError(f"Selected topic {topic_name!r} did not deserialize as PointCloud2.")
         current_index = self.frames_seen
         self.frames_seen += 1
+        if (current_index == self.end_index + 1 and self.visualization_enabled
+                and self.scenario.visualization.marker_mode == "frame"):
+            self._extra_messages.append((self.scenario.visualization.marker_topic,
+                                         build_clear_marker_array(message), int(timestamp)))
+            self.marker_array_count += 1
         if current_index < self.start_index or current_index > self.end_index:
             return message
         self._frame_rng(current_index)

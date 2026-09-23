@@ -1,4 +1,6 @@
 import numpy as np
+from dataclasses import replace
+from visualization_msgs.msg import Marker
 
 from synthetic_data_generation.geometry import build_geometries
 from synthetic_data_generation.object_injector import FrameInjectionResult, ObjectInjectionStats
@@ -43,3 +45,17 @@ def test_zero_visible_object_still_has_empty_points_marker():
     array = build_marker_array(cloud, geometry, result, scenario.visualization)
     marker = next(item for item in array.markers if item.ns == "synthetic/box/points")
     assert len(marker.points) == 0
+
+
+def test_frame_mode_clears_previous_markers_and_keeps_current_until_next_frame():
+    scenario = parse_scenario(v2_document([obj("box", {"type": "box", "dimensions_m": [1,1,1]})]))
+    geometry = build_geometries(scenario.objects)
+    cloud = make_padded_point_cloud([(5,0,0)])
+    result = FrameInjectionResult(1,1,0,0,0,np.empty(0,dtype=int),np.empty(0,dtype=int),
+        np.empty((0,3)),np.empty(0,dtype=object),(ObjectInjectionStats("box",0,0,0),))
+    config = replace(scenario.visualization, marker_mode="frame")
+    markers = build_marker_array(cloud, geometry, result, config).markers
+    assert markers[0].action == Marker.DELETEALL
+    assert len(markers) == 5
+    assert all(marker.action == Marker.ADD for marker in markers[1:])
+    assert all(marker.lifetime.sec == marker.lifetime.nanosec == 0 for marker in markers[1:])

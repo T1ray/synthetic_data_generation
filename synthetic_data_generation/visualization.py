@@ -133,12 +133,21 @@ def _bbox_marker(cloud: Any, item: BuiltGeometry, lifetime: Any, marker_cls: Any
     return marker
 
 
+def build_clear_marker_array(cloud: Any) -> Any:
+    """Clear the previous frame's markers on this dedicated marker topic."""
+    _, _, _, Marker, MarkerArray = _messages()
+    marker = Marker()
+    marker.header = copy.deepcopy(cloud.header)
+    marker.action = Marker.DELETEALL
+    return MarkerArray(markers=[marker])
+
+
 def build_marker_array(cloud: Any, geometries: tuple[BuiltGeometry, ...], result: FrameInjectionResult,
-                       config: VisualizationConfig) -> Any:
+                        config: VisualizationConfig) -> Any:
     Duration, Point, ColorRGBA, Marker, MarkerArray = _messages()
-    lifetime = _duration(config.marker_lifetime_sec, Duration)
+    lifetime = _duration(0.0 if config.marker_mode == "frame" else config.marker_lifetime_sec, Duration)
     stats = {item.object_id: item for item in result.object_stats}
-    markers: list[Any] = []
+    markers: list[Any] = build_clear_marker_array(cloud).markers if config.marker_mode == "frame" else []
     for item in geometries:
         object_stats = stats[item.object_id]
         if config.show_geometry:

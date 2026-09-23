@@ -74,6 +74,7 @@ class VisualizationConfig:
     show_modified_points: bool = True
     show_text: bool = True
     show_bounding_box: bool = True
+    marker_mode: str = "timed"
 
 
 @dataclass(frozen=True)
@@ -383,17 +384,20 @@ def _parse_visualization(raw: Any) -> VisualizationConfig:
     path = "visualization"
     value = _mapping(raw, path)
     required = {"enabled", "marker_topic", "point_size_m", "marker_lifetime_sec"}
-    optional = {"show_geometry", "show_modified_points", "show_text", "show_bounding_box"}
+    optional = {"show_geometry", "show_modified_points", "show_text", "show_bounding_box", "marker_mode"}
     _keys(value, path, required, optional)
     enabled = _boolean(value["enabled"], f"{path}.enabled")
     topic = _text(value["marker_topic"], f"{path}.marker_topic")
     point_size = _number(value["point_size_m"], f"{path}.point_size_m", positive=True)
     lifetime = _number(value["marker_lifetime_sec"], f"{path}.marker_lifetime_sec", positive=True)
+    marker_mode = _text(value.get("marker_mode", "timed"), f"{path}.marker_mode")
+    if marker_mode not in {"timed", "frame"}:
+        raise ScenarioError(f"{path}.marker_mode: expected timed or frame")
     return VisualizationConfig(enabled, topic, point_size, lifetime,
         _boolean(value.get("show_geometry", True), f"{path}.show_geometry"),
         _boolean(value.get("show_modified_points", True), f"{path}.show_modified_points"),
         _boolean(value.get("show_text", True), f"{path}.show_text"),
-        _boolean(value.get("show_bounding_box", True), f"{path}.show_bounding_box"))
+        _boolean(value.get("show_bounding_box", True), f"{path}.show_bounding_box"), marker_mode)
 
 
 def _probability(value: Any, path: str) -> float:

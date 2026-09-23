@@ -68,6 +68,10 @@ def test_duplicate_ids_and_bad_visualization_are_rejected():
     document["visualization"]["marker_lifetime_sec"] = 0
     with pytest.raises(ScenarioError, match="marker_lifetime_sec"):
         parse_scenario(document)
+    document["visualization"]["marker_lifetime_sec"] = 0.25
+    document["visualization"]["marker_mode"] = "unknown"
+    with pytest.raises(ScenarioError, match="marker_mode"):
+        parse_scenario(document)
 
 
 def test_human_mesh_path_and_extension_validation(tmp_path: Path):

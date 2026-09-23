@@ -1,0 +1,64 @@
+schema_version: 2
+scenario_id: visible_objects_lidar
+seed: 17421
+source:
+  pointcloud_topic: /lidar_points
+frames:
+  start_index: 80
+  end_index: 100
+visualization:
+  enabled: true
+  marker_topic: /synthetic/markers
+  point_size_m: 0.12
+  marker_lifetime_sec: 600.0
+  show_geometry: true
+  show_modified_points: true
+  show_text: true
+  show_bounding_box: true
+objects:
+  # Four large panels form a visible enclosure around the LiDAR at 6 m.
+  # Box positions are base centers in the LiDAR frame (X forward, Y left, Z up).
+  - id: front_red
+    class_name: diagnostic_panel
+    geometry: { type: box, dimensions_m: [0.5, 12.0, 6.0] }
+    pose:
+      {
+        coordinate_system: lidar,
+        xyz_m: [6.0, 0.0, -3.0],
+        rpy_deg: [0.0, 0.0, 0.0],
+      }
+    visualization: { color_rgba: [1.0, 0.1, 0.1, 0.9] }
+  - id: left_green
+    class_name: diagnostic_panel
+    geometry: { type: box, dimensions_m: [12.0, 0.5, 6.0] }
+    pose:
+      {
+        coordinate_system: lidar,
+        xyz_m: [0.0, 6.0, -3.0],
+        rpy_deg: [0.0, 0.0, 0.0],
+      }
+    visualization: { color_rgba: [0.1, 1.0, 0.1, 0.9] }
+  - id: rear_blue
+    class_name: diagnostic_panel
+    geometry: { type: box, dimensions_m: [0.5, 12.0, 6.0] }
+    pose:
+      {
+        coordinate_system: lidar,
+        xyz_m: [-6.0, 0.0, -3.0],
+        rpy_deg: [0.0, 0.0, 0.0],
+      }
+    visualization: { color_rgba: [0.1, 0.4, 1.0, 0.9] }
+  - id: right_yellow
+    class_name: diagnostic_panel
+    geometry: { type: box, dimensions_m: [12.0, 0.5, 6.0] }
+    pose:
+      {
+        coordinate_system: lidar,
+        xyz_m: [0.0, -6.0, -3.0],
+        rpy_deg: [0.0, 0.0, 0.0],
+      }
+    visualization: { color_rgba: [1.0, 0.9, 0.1, 0.9] }
+sensor_effects:
+  range_noise: false
+  dropout: false
+  modify_intensity: false

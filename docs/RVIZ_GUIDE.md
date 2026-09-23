@@ -115,9 +115,9 @@ visualization:
 marker_lifetime_sec: 0.25
 ```
 
-Lifetime должен быть положительным. Это удаляет маркер, если объект стал
-неактивным или воспроизведение закончилось. Подберите значение немного больше
-периода LiDAR-кадра.
+В стандартном режиме `marker_mode: timed` lifetime должен быть положительным.
+Маркер удаляется по времени, в том числе при паузе без симулированного времени.
+Большой lifetime оставляет рамки прошлых объектов и накладывает их на текущие.
 
 Примеры:
 
@@ -126,16 +126,32 @@ Lifetime должен быть положительным. Это удаляет
 20 Hz → 0.08–0.15 s
 ```
 
+Для просмотра кадр за кадром используйте:
+
+```yaml
+visualization:
+  marker_mode: frame
+  marker_lifetime_sec: 0.25  # в этом режиме игнорируется
+```
+
+В этом режиме MarkerArray удаляет старые маркеры при каждом новом
+обрабатываемом кадре. Текущие маркеры имеют нулевой ROS lifetime и остаются
+на экране, пока воспроизведение стоит на паузе. На первом кадре после
+диапазона сценария записывается очищающий MarkerArray. Для этого требуется
+**заново сгенерировать bag**: изменение YAML не меняет уже записанные маркеры.
+
 ## Human mesh
 
 Предпочтительный URI:
 
 ```yaml
-mesh_resource_uri: package://synthetic_data_generation/meshes/humans/person.obj
+mesh_resource_uri: package://synthetic_data_generation/meshes/humans/low_poly_person.obj
 ```
 
-После изменения mesh выполните colcon build и source overlay. Если URI не
-задан, генератор использует TRIANGLE_LIST, а для слишком большого mesh — AABB.
+Этот URI работает только после colcon build и source overlay в окружении RViz.
+В `sequential_objects_lidar.yaml` URI намеренно не задан: генератор записывает
+треугольники прямо в MarkerArray, поэтому RViz не ищет внешний файл. Для
+слишком большого mesh без URI используется AABB.
 
 ## Cable
 

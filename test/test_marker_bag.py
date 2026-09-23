@@ -16,13 +16,13 @@ from synthetic_data_generation.scenario import parse_scenario
 from synthetic_data_generation.smoke_test import CLOUD_TOPIC, STRING_TOPIC, make_padded_point_cloud, read_bag
 
 
-def scenario(enabled):
+def scenario(enabled, marker_mode="timed"):
     return parse_scenario({
         "schema_version": 2, "scenario_id": "markers", "seed": 4,
         "source": {"pointcloud_topic": CLOUD_TOPIC},
         "frames": {"start_index": 1, "end_index": 3},
         "visualization": {"enabled": enabled, "marker_topic": "/synthetic/markers",
-            "point_size_m": .06, "marker_lifetime_sec": .25, "show_geometry": True,
+            "point_size_m": .06, "marker_lifetime_sec": .25, "marker_mode": marker_mode, "show_geometry": True,
             "show_modified_points": True, "show_text": True, "show_bounding_box": True},
         "objects": [
             {"id": "box-a", "class_name": "obstacle", "geometry": {"type": "box", "dimensions_m": [1,1,1]},
@@ -96,3 +96,22 @@ def test_marker_messages_follow_cloud_and_disabled_mode_is_identical(tmp_path: P
         assert sum(item["modified_slot_count"] for item in annotation["objects"]) == annotation["modified_slot_count"]
     del records
     gc.collect()
+
+
+def test_frame_mode_clears_markers_on_first_frame_after_range(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("synthetic_data_generation.processor.inject_objects", fake_inject)
+    input_bag = tmp_path / "input"
+    output_bag = tmp_path / "frame_mode"
+    create_bag(input_bag)
+    result = roundtrip_bag(input_bag, output_bag, progress_every=0,
+                           context=ProcessingContext.from_scenario(scenario(True, "frame")))
+    _, records = read_bag(output_bag)
+    marker_records = [item for item in records if item.topic_name == "/synthetic/markers"]
+    assert result.output_message_count == 14  # Three active frames and one clear frame.
+    assert [item.timestamp for item in marker_records] == [110, 120, 130, 140]
+    assert all(item.message.markers[0].action == item.message.markers[0].DELETEALL
+               for item in marker_records)
+    assert all(len(item.message.markers) == 9 for item in marker_records[:3])
+    assert len(marker_records[-1].message.markers) == 1
+    assert all(marker.lifetime.sec == marker.lifetime.nanosec == 0
+               for item in marker_records[:3] for marker in item.message.markers[1:])

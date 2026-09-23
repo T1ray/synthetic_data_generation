@@ -105,6 +105,10 @@ output_message_count == input_message_count
 output_message_count = input_message_count + processed_frame_count
 ```
 
+При `visualization.marker_mode: frame` дополнительно записывается один
+очищающий MarkerArray на первом кадре после выбранного диапазона, если такой
+кадр существует. Тогда дополнительных сообщений `processed_frame_count + 1`.
+
 MarkerArray записывается сразу после соответствующего PointCloud2 с тем же bag
 timestamp.
 
