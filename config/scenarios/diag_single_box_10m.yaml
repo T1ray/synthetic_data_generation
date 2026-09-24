@@ -1,5 +1,5 @@
 schema_version: 1
-scenario_id: box_lidar_10m
+scenario_id: diag_single_box_10m
 seed: 42
 source:
   pointcloud_topic: /lidar_points

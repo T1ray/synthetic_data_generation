@@ -1,5 +1,5 @@
 schema_version: 2
-scenario_id: mixed_objects_lidar
+scenario_id: diag_mixed_geometries
 seed: 17421
 source:
   pointcloud_topic: /lidar_points

@@ -37,8 +37,8 @@ objects:
 `frames`, `objects`, `sensor_effects`. Для v3 также обязательны
 `visualization` и `zero_slot_recovery`; `track` и `ego_motion` нужны при
 `track_relative`. Фрагмент выше показывает только синтаксис. Полный пример
-v2 — `config/scenarios/visible_objects_lidar.yaml`, v3 —
-`config/scenarios/track_sensor_model.yaml`.
+v2 — `config/scenarios/diag_lidar_field_of_view.yaml`, v3 —
+`config/scenarios/diag_track_and_sensor_model.yaml`.
 
 ## Версии и выбор режима
 
@@ -87,7 +87,7 @@ header stamp** используется bag timestamp. Это время сра�
 
 ```yaml
 schema_version: 2
-scenario_id: visible_objects_lidar
+scenario_id: diag_lidar_field_of_view
 seed: 17421
 source:
   pointcloud_topic: /lidar_points

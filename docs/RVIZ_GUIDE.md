@@ -149,7 +149,7 @@ mesh_resource_uri: package://synthetic_data_generation/meshes/humans/low_poly_pe
 ```
 
 Этот URI работает только после colcon build и source overlay в окружении RViz.
-В `sequential_objects_lidar.yaml` URI намеренно не задан: генератор записывает
+В `diag_sequential_geometries.yaml` URI намеренно не задан: генератор записывает
 треугольники прямо в MarkerArray, поэтому RViz не ищет внешний файл. Для
 слишком большого mesh без URI используется AABB.
 

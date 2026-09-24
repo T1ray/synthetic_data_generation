@@ -70,7 +70,7 @@ source install/setup.bash
 python -m synthetic_data_generation.bag_roundtrip \
   --input /path/to/input_bag \
   --output /path/to/new_output_bag \
-  --scenario config/scenarios/mixed_objects_lidar.yaml
+  --scenario config/scenarios/diag_mixed_geometries.yaml
 ```
 
 Выходной путь должен быть новым каталогом. Рядом создаётся
@@ -109,7 +109,7 @@ Schema v1 сохраняет прежнюю семантику box: `xyz_m` — 
 
 ## Scenario YAML v2
 
-Полный пример: `config/scenarios/mixed_objects_lidar.yaml`.
+Полный пример: `config/scenarios/diag_mixed_geometries.yaml`.
 
 Общая визуализация:
 
@@ -223,7 +223,7 @@ finite(t_hit) and epsilon < t_hit < original_range - epsilon
 
 ## Schema v3: сенсорная модель и временная согласованность
 
-Полный пример находится в `config/scenarios/track_sensor_model.yaml`, а
+Полный пример находится в `config/scenarios/diag_track_and_sensor_model.yaml`, а
 синтетическая trajectory — в `trajectories/synthetic_run.csv`. Порядок обработки
 одного кадра фиксирован:
 

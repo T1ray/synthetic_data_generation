@@ -46,7 +46,7 @@ python -m synthetic_data_generation.bag_roundtrip \
 python -m synthetic_data_generation.bag_roundtrip \
   --input /path/to/input_bag \
   --output /path/to/generated_output \
-  --scenario config/scenarios/mixed_objects_lidar.yaml \
+  --scenario config/scenarios/diag_mixed_geometries.yaml \
   --progress-every 100
 ```
 
@@ -56,7 +56,7 @@ python -m synthetic_data_generation.bag_roundtrip \
 python -m synthetic_data_generation.bag_roundtrip \
   --input /path/to/input_bag \
   --output /path/to/generated_sensor_output \
-  --scenario config/scenarios/track_sensor_model.yaml
+  --scenario config/scenarios/diag_track_and_sensor_model.yaml
 ```
 
 ## Что считается кадром

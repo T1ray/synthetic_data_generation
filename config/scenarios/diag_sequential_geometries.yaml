@@ -2,7 +2,7 @@
 # In roundT_doubleT, valid LiDAR rays point toward negative Y.
 # All four objects are placed about 10 m along that measured ray fan.
 schema_version: 3
-scenario_id: sequential_objects_lidar
+scenario_id: diag_sequential_geometries
 seed: 17421
 source:
   pointcloud_topic: /lidar_points

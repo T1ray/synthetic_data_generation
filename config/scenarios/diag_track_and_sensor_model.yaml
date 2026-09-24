@@ -1,5 +1,5 @@
 schema_version: 3
-scenario_id: track_obstacle_with_sensor_model
+scenario_id: diag_track_and_sensor_model
 seed: 17421
 source: {pointcloud_topic: /lidar_points}
 frames: {start_index: 0, end_index: 4}

@@ -1,0 +1,98 @@
+# Perception benchmark for roundT_doubleT. Coordinates are in hesai_lidar.
+# The measured fan points toward negative Y; XYZ is repeated per LiDAR frame.
+schema_version: 3
+scenario_id: draft_metro_cable_crossing_lidar
+seed: 17421
+source: {pointcloud_topic: /lidar_points}
+frames: {start_index: 0, end_index: 39}
+zero_slot_recovery:
+  enabled: false
+  ring_field: ring
+  timestamp_field: timestamp
+  timestamp_unit: seconds
+  min_valid_samples_per_ring: 8
+  interpolation: linear
+  allow_extrapolation: false
+  max_angular_error_deg: 0.25
+sensor_effects:
+  no_return_encoding: zero_xyz
+  range_noise:
+    enabled: false
+    model: gaussian
+    base_sigma_m: 0.0
+    sigma_per_meter: 0.0
+    incidence_sigma_scale: 0.0
+    min_range_m: 0.2
+    max_resample_attempts: 8
+  dropout:
+    enabled: false
+    base_return_probability: 1.0
+    distance_reference_m: 15.0
+    distance_exponent: 0.0
+    incidence_exponent: 0.0
+    min_return_probability: 1.0
+  intensity:
+    enabled: false
+    model: empirical
+    field_name: intensity
+    range_bin_m: 5.0
+    min_samples_per_bin: 8
+    incidence_exponent: 1.0
+    additive_sigma: 0.0
+    fallback: preserve_original
+    constant: 50.0
+    on_missing: error
+visualization:
+  enabled: true
+  marker_topic: /synthetic/markers
+  marker_mode: frame
+  point_size_m: 0.10
+  marker_lifetime_sec: 600.0
+  show_geometry: true
+  show_modified_points: true
+  show_text: true
+  show_bounding_box: true
+objects:
+# Narrow cable across X, first near and then farther away.
+  - id: cable_near
+    class_name: cable
+    geometry:
+      type: cable
+      radius_m: 0.08
+      radial_segments: 12
+      control_points_m:
+        - [-1.8, 0.0, 0.0]
+        - [-0.9, 0.0, 0.25]
+        - [0.0, 0.0, 0.45]
+        - [0.9, 0.0, 0.25]
+        - [1.8, 0.0, 0.0]
+    placement:
+      type: lidar_relative
+      xyz_m: [0, -6, -1.5]
+      rpy_deg: [0.0, 0.0, 0.0]
+    temporal:
+      active_frames: {start_index: 0, end_index: 19}
+      motion: {type: static}
+    material: {reflectivity: 0.7, return_probability_scale: 1.0}
+    visualization: {color_rgba: [1.0, 0.1, 0.8, 1.0]}
+  - id: cable_far
+    class_name: cable
+    geometry:
+      type: cable
+      radius_m: 0.08
+      radial_segments: 12
+      control_points_m:
+        - [-1.8, 0.0, 0.0]
+        - [-0.9, 0.0, 0.25]
+        - [0.0, 0.0, 0.45]
+        - [0.9, 0.0, 0.25]
+        - [1.8, 0.0, 0.0]
+    placement:
+      type: lidar_relative
+      xyz_m: [0, -12, -1.6]
+      rpy_deg: [0.0, 0.0, 0.0]
+    temporal:
+      active_frames: {start_index: 20, end_index: 39}
+      motion: {type: static}
+    material: {reflectivity: 0.7, return_probability_scale: 1.0}
+    visualization: {color_rgba: [1.0, 0.1, 0.8, 1.0]}
